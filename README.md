@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 
 # KhamoshChat Identity (AWS) 🤫!!! 
 
@@ -96,3 +97,19 @@ These are my current terms:
 1. You are free to modify and distribute.
 
 **Legally:** This software comes under Apache License 2.0. Proper documentation will be added in future.
+=======
+# Welcome to your CDK TypeScript project
+
+This is a blank project for CDK development with TypeScript.
+
+The `cdk.json` file tells the CDK Toolkit how to execute your app.
+
+## Useful commands
+
+* `npm run build`   compile typescript to js
+* `npm run watch`   watch for changes and compile
+* `npm run test`    perform the jest unit tests
+* `npx cdk deploy`  deploy this stack to your default AWS account/region
+* `npx cdk diff`    compare deployed stack with current state
+* `npx cdk synth`   emits the synthesized CloudFormation template
+>>>>>>> e8f3bf5 (Initial commit)
