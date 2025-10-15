@@ -4,9 +4,7 @@ import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as apigw2 from "aws-cdk-lib/aws-apigatewayv2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 // import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
-import {
-  HttpLambdaAuthorizer,
-} from "aws-cdk-lib/aws-apigatewayv2-authorizers";
+import { HttpLambdaAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { SharedConfig } from "./config";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { ApiLambdaConstructor } from "./constructors/lambda-constructor";
@@ -15,7 +13,7 @@ export interface ApiStackProps extends StackProps {
   config: SharedConfig;
   primaryTable: dynamodb.TableV2;
   ttlTable: dynamodb.TableV2;
-//   bucket: s3.Bucket;
+  //   bucket: s3.Bucket;
 }
 type lambda = {
   name: string;
@@ -41,7 +39,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { config, primaryTable: table  } = props;
+    const { config, primaryTable, ttlTable  } = props;
 
     // Create custom domain
     const certificate = acm.Certificate.fromCertificateArn(
@@ -65,9 +63,7 @@ export class ApiStack extends Stack {
           mappingKey: config.stage,
         },
         corsPreflight: {
-          allowOrigins: [
-            "http://localhost:3000",
-          ],
+          allowOrigins: ["http://localhost:3000"],
           allowMethods: [apigw2.CorsHttpMethod.GET],
         },
       },
@@ -98,37 +94,43 @@ export class ApiStack extends Stack {
 
     //Create user authorizer
     // Define admin lambdas
-    const adminLambdas: lambda[] = [
+    const lambdas: lambda[] = [
       {
-        name: "admin-products",
-        entry: "lambda/admin/products.ts",
-        route: "/admin/products",
-        methods: [
-          apigw2.HttpMethod.DELETE,
-          apigw2.HttpMethod.PATCH,
-          apigw2.HttpMethod.POST,
-        ],
+        name: "registration-1",
+        entry: "lambda/register.ts",
+        route: "/register/1",
+        methods: [apigw2.HttpMethod.POST],
         environment: {
-          DB_TABLE_NAME: props.primaryTable.tableName,
-          // BUCKET_NAME: bucket.bucketName,
+          TTL_TABLE: props.ttlTable.tableName,
+          REGION: config.region,
+        },
+        permissions: {
+          db: "W" as const,
+        },
+      },
+      {
+        name: "registration-2",
+        entry: "lambda/register.ts",
+        route: "/register/2",
+        methods: [apigw2.HttpMethod.POST],
+        environment: {
+          TTL_TABLE: props.ttlTable.tableName,
+          PRIMARY_TABLE: props.primaryTable.tableName,
           REGION: config.region,
         },
         permissions: {
           db: "RW" as const,
         },
-        // authorizer: this.adminAuthorizer,
       },
     ];
 
-
     // Create all admin lambdas
-    adminLambdas.forEach((lambdaDef) => {
+    lambdas.forEach((lambdaDef) => {
       new ApiLambdaConstructor(this, `${lambdaDef.name}-function`, {
         ...lambdaDef,
         projectName: config.projectName,
         httpApi: this.httpApi,
-        table,
-        // bucket,
+        tables: [primaryTable, ttlTable],
         stage: config.stage,
       });
     });
@@ -144,4 +146,3 @@ export class ApiStack extends Stack {
     // });
   }
 }
-

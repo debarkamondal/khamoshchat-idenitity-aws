@@ -25,7 +25,7 @@ export interface LambdaFunctionProps {
   authorizer?: HttpLambdaAuthorizer;
   projectName: string;
   httpApi: apigw2.HttpApi;
-  table?: TableV2;
+  tables?: TableV2[];
   // bucket?: Bucket;
 }
 
@@ -50,13 +50,13 @@ export class ApiLambdaConstructor extends Construct {
         ],
       },
     );
-    if (props.table) {
+    if (props.tables) {
       if (props.permissions?.db === "RW") {
-        props.table.grantReadWriteData(serviceRole);
+        props.tables.forEach((table)=> table.grantReadWriteData(serviceRole))
       } else if (props.permissions?.db === "R") {
-        props.table.grantReadData(serviceRole);
+        props.tables.forEach((table)=> table.grantReadData(serviceRole))
       } else if (props.permissions?.db === "W") {
-        props.table.grantWriteData(serviceRole);
+        props.tables.forEach((table)=> table.grantWriteData(serviceRole))
       }
     }
 

@@ -44,9 +44,9 @@ export class InfrastructureStack extends Stack {
     );
     this.ttlTable = new dynamodb.TableV2(
       this,
-      `${config.projectName}-${config.stage}-primary-table`,
+      `${config.projectName}-${config.stage}-ttl-table`,
       {
-        tableName: `${config.projectName}-${config.stage}-primary`,
+        tableName: `${config.projectName}-${config.stage}-ttl`,
         partitionKey: {
           name: "pk",
           type: dynamodb.AttributeType.STRING,
@@ -65,12 +65,14 @@ export class InfrastructureStack extends Stack {
           config.stage === "prod"
             ? RemovalPolicy.RETAIN
             : RemovalPolicy.DESTROY,
+        timeToLiveAttribute: "ttl",
       },
     );
 
     // Outputs
-    new CfnOutput(this, "PrimaryTableName", { value: this.primaryTable.tableName });
+    new CfnOutput(this, "PrimaryTableName", {
+      value: this.primaryTable.tableName,
+    });
     new CfnOutput(this, "TtlTableName", { value: this.ttlTable.tableName });
   }
 }
-

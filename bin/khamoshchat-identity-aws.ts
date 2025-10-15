@@ -51,6 +51,3 @@ const apiStack = new ApiStack(
 
 apiStack.addDependency(infraStack);
 
-// new KhamoshchatIdentityAwsStack(app, 'KhamoshchatIdentityAwsStack', {
-// // Define shared configuration
-// });

@@ -11,11 +11,14 @@
     "cdk": "cdk"
   },
   "devDependencies": {
+    "@aws-sdk/client-dynamodb": "^3.910.0",
+    "@aws-sdk/lib-dynamodb": "^3.910.0",
     "@types/dotenv": "^6.1.1",
     "@types/jest": "^29.5.14",
     "@types/node": "22.7.9",
     "aws-cdk": "2.1030.0",
     "dotenv": "^17.2.3",
+    "esbuild": "^0.25.11",
     "jest": "^29.7.0",
     "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2",
@@ -23,6 +26,7 @@
   },
   "dependencies": {
     "aws-cdk-lib": "2.215.0",
-    "constructs": "^10.0.0"
+    "constructs": "^10.0.0",
+    "hono": "^4.9.12"
   }
 }
