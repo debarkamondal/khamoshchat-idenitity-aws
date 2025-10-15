@@ -1,20 +1,56 @@
 #!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
 import { KhamoshchatIdentityAwsStack } from '../lib/khamoshchat-identity-aws-stack';
+import { SharedConfig } from "../lib/config";
+import * as dotenv from "dotenv";
+import * as path from "path";
+import { InfrastructureStack } from '../lib/infra-stack';
+import { ApiStack } from '../lib/api-stack';
+
 
 const app = new cdk.App();
-new KhamoshchatIdentityAwsStack(app, 'KhamoshchatIdentityAwsStack', {
-  /* If you don't specify 'env', this stack will be environment-agnostic.
-   * Account/Region-dependent features and context lookups will not work,
-   * but a single synthesized template can be deployed anywhere. */
+dotenv.config({ path: path.join(__dirname, "..", ".env") });
 
-  /* Uncomment the next line to specialize this stack for the AWS Account
-   * and Region that are implied by the current CLI configuration. */
-  // env: { account: process.env.CDK_DEFAULT_ACCOUNT, region: process.env.CDK_DEFAULT_REGION },
+const config: SharedConfig = {
+  backendDomainName: process.env.BACKEND_DOMAIN_NAME || "api.example.com",
+  certArn:
+    process.env.CERT_ARN ||
+    "arn:aws:acm:region:account:certificate/certificate-id",
+  stage: process.env.STAGE || "dev",
+  projectName: process.env.PROJECT_NAME || "khamoshChatIdentity",
+  region: process.env.REGION || "us-east-1",
+};
 
-  /* Uncomment the next line if you know exactly what Account and Region you
-   * want to deploy the stack to. */
-  // env: { account: '123456789012', region: 'us-east-1' },
+// Define environment for all stacks
+const env = {
+  account: process.env.ACCOUNT_ID || "12312312312",
+  region: config.region,
+};
 
-  /* For more information, see https://docs.aws.amazon.com/cdk/latest/guide/environments.html */
-});
+// Create stacks
+const infraStack = new InfrastructureStack(
+  app,
+  `${config.projectName}-${config.stage}-infra`,
+  {
+    config,
+    stackName: `${config.projectName}-${config.stage}-infra`,
+    env,
+  },
+);
+const apiStack = new ApiStack(
+  app,
+  `${config.projectName}-${config.stage}-api`,
+  {
+    config,
+    stackName: `${config.projectName}-${config.stage}-api`,
+    primaryTable: infraStack.primaryTable,
+    ttlTable: infraStack.ttlTable,
+    env,
+  },
+);
+
+apiStack.addDependency(infraStack);
+
+// new KhamoshchatIdentityAwsStack(app, 'KhamoshchatIdentityAwsStack', {
+// // Define shared configuration
+// });
