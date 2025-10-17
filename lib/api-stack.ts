@@ -96,9 +96,9 @@ export class ApiStack extends Stack {
     // Define admin lambdas
     const lambdas: lambda[] = [
       {
-        name: "registration-1",
+        name: "registration-phone",
         entry: "lambda/register.ts",
-        route: "/register/1",
+        route: "/register/phone",
         methods: [apigw2.HttpMethod.POST],
         environment: {
           TTL_TABLE: props.ttlTable.tableName,
@@ -109,9 +109,9 @@ export class ApiStack extends Stack {
         },
       },
       {
-        name: "registration-2",
+        name: "registration-otp",
         entry: "lambda/register.ts",
-        route: "/register/2",
+        route: "/register/otp",
         methods: [apigw2.HttpMethod.POST],
         environment: {
           TTL_TABLE: props.ttlTable.tableName,

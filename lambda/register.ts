@@ -3,6 +3,7 @@ import { DynamoDBDocument } from "@aws-sdk/lib-dynamodb";
 import { Context, Hono } from "hono";
 import { handle, LambdaEvent } from "hono/aws-lambda";
 import crypto from "crypto";
+import { ContentfulStatusCode } from "hono/utils/http-status";
 
 type Bindings = {
   event: LambdaEvent;
@@ -24,7 +25,7 @@ const createUserTTL = async (phone: string, identityKey: string) => {
         sk: phone,
         lsi: identityKey,
         ttl: Math.floor(Date.now() / 1000) + 3600,
-        opt: crypto.randomInt(100000, 1000000),
+        otp: crypto.randomInt(100000, 1000000),
       },
     });
     if (result.$metadata.httpStatusCode !== 200) return false;
@@ -37,12 +38,11 @@ const createUserTTL = async (phone: string, identityKey: string) => {
 const verifyUser = async (
   phone: string,
   otp: string,
-  {
-    sigPreKey,
-    otks,
-    sign,
-  }: { sigPreKey: string; sign: string; otks: string[] },
-) => {
+  { preKey, otks, sign }: { preKey: string; sign: string; otks: string[] },
+): Promise<{
+  status: ContentfulStatusCode;
+  error?: string;
+}> => {
   const dbClient = new DynamoDB({});
   const db = DynamoDBDocument.from(dbClient);
   try {
@@ -54,28 +54,25 @@ const verifyUser = async (
         sk: phone,
       },
     });
-    if (
-      user.$metadata.httpStatusCode !== 200 ||
-      !user.Item?.lsi ||
-      user.Item?.otp !== otp
-    )
-      return false;
-
+    if (user.Item?.otp !== otp) return { status: 403, error: "OTP mismatch" };
+    if (user.$metadata.httpStatusCode !== 200 || !user.Item?.lsi)
+      return { status: 500, error: "Server error" };
+    console.log("*******************");
     // Verify user by matching sign
     const isUserValid = crypto.verify(
-      "ed25519",
-      new Uint8Array(Buffer.from(sigPreKey, "base64url")),
+      null,
+      new Uint8Array(Buffer.from(preKey, "base64")),
       {
         key: Buffer.concat([
           Buffer.from("302a300506032b6570032100", "hex"), // ASN.1 SPKI prefix for Ed25519
-          Buffer.from(user.Item.lsi),
+          Buffer.from(user.Item.lsi, "base64"),
         ]),
         format: "der",
         type: "spki",
       },
-      new Uint8Array(Buffer.from(sign, "base64url")),
+      new Uint8Array(Buffer.from(sign, "base64")),
     );
-    if (!isUserValid) return false;
+    if (!isUserValid) return { status: 401, error: "Bad request" };
 
     // Add user to the permanent db if user is valid
     const result = await db.put({
@@ -85,40 +82,42 @@ const verifyUser = async (
         sk: phone,
         lsi: user.Item.lsi,
         ceratedAt: Date.now(),
-        sigPreKey,
+        sigPreKey: preKey,
         otks,
       },
     });
-    if (result.$metadata.httpStatusCode !== 200) return false;
-    return true;
+    if (result.$metadata.httpStatusCode !== 200)
+      return { status: 500, error: "server error" };
+    return { status: 200 };
   } catch (error: any) {
     throw new Error(error);
   }
 };
-app.post("/register/1", async (c: Context) => {
+app.post("/register/phone", async (c: Context) => {
   const body = await c.req.json();
-  console.log(body.phone, body.identityKey)
-  const user = await createUserTTL(body.phone, body.identityKey);
+  const user = await createUserTTL(body.phone, body.iKey);
   if (user) return c.body(null, 204);
   else return c.body(null, 500);
 });
 
-app.post("/register/2", async (c: Context) => {
+app.post("/register/otp", async (c: Context) => {
   const body: {
     phone: string;
-    sigPreKey: string;
+    preKey: string;
+    iKey: string;
     sign: string;
     otp: string;
     otks: string[];
   } = await c.req.json();
 
   const isUserValid = await verifyUser(body.phone, body.otp, {
-    sigPreKey: body.sigPreKey,
+    preKey: body.preKey,
     sign: body.sign,
     otks: body.otks,
   });
-  if (isUserValid) return c.body(null, 204);
-  else return c.body(null, 401);
+  console.log(isUserValid);
+  if (isUserValid.status === 200) return c.body(null, 204);
+  else return c.text(isUserValid.error as string, isUserValid.status);
 });
 
 export const handler = handle(app);
