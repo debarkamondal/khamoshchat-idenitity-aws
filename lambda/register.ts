@@ -115,7 +115,6 @@ app.post("/register/otp", async (c: Context) => {
     sign: body.sign,
     otks: body.otks,
   });
-  console.log(isUserValid);
   if (isUserValid.status === 200) return c.body(null, 204);
   else return c.text(isUserValid.error as string, isUserValid.status);
 });

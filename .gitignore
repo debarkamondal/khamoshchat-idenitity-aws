@@ -9,3 +9,9 @@ cdk.out
 
 .env
 build/
+
+target
+
+# Misc
+.DS_Store
+cdk.context.json

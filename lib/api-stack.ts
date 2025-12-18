@@ -2,12 +2,10 @@ import { Stack, CfnOutput, StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as apigw2 from "aws-cdk-lib/aws-apigatewayv2";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-// import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import { HttpLambdaAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { SharedConfig } from "./config";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import { ApiLambdaConstructor } from "./constructors/lambda-constructor";
+import { RustLambdaConstructor } from "./constructors/rust-lambda-constructor";
 
 export interface ApiStackProps extends StackProps {
   config: SharedConfig;
@@ -15,6 +13,22 @@ export interface ApiStackProps extends StackProps {
   ttlTable: dynamodb.TableV2;
   //   bucket: s3.Bucket;
 }
+type rustLambda = {
+  name: string;
+  manifestPath: string;
+  route: string;
+  methods: apigw2.HttpMethod[];
+  environment?:
+    | {
+        [key: string]: string;
+      }
+    | undefined;
+  permissions?: {
+    db?: "RW" | "R" | "W";
+    // s3?: "RW" | "R" | "W";
+  };
+  authorizer?: HttpLambdaAuthorizer;
+};
 type lambda = {
   name: string;
   entry: string;
@@ -39,7 +53,7 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
 
-    const { config, primaryTable, ttlTable  } = props;
+    const { config, primaryTable, ttlTable } = props;
 
     // Create custom domain
     const certificate = acm.Certificate.fromCertificateArn(
@@ -69,6 +83,45 @@ export class ApiStack extends Stack {
       },
     );
 
+    // Create a rust lambda handler
+    // const rustRole = new iam.Role(
+    //   this,
+    //   `${config.projectName}-${config.stage}-rust-lamda-role`,
+    //   {
+    //     roleName: PhysicalName.GENERATE_IF_NEEDED,
+    //     assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
+    //   },
+    // );
+    // rustRole.addManagedPolicy(
+    //   iam.ManagedPolicy.fromAwsManagedPolicyName(
+    //     "service-role/AWSLambdaBasicExecutionRole",
+    //   ),
+    // );
+    // const rustFn = new RustFunction(
+    //   this,
+    //   `${config.projectName}-${config.stage}-register`,
+    //   {
+    //     manifestPath: "lambda/register/Cargo.toml",
+    //     functionName: `${config.projectName}-${config.stage}-register-lambda`,
+    //     role: rustRole,
+    //   },
+    // );
+    // const rustIntegration = new HttpLambdaIntegration(
+    //   `${config.projectName}-register-integration`,
+    //   rustFn,
+    // );
+    //
+    // this.httpApi.addRoutes({
+    //   path: "/register/otp",
+    //   methods: [apigw2.HttpMethod.POST],
+    //   integration: rustIntegration,
+    // });
+    // this.httpApi.addRoutes({
+    //   path: "/register/phone",
+    //   methods: [apigw2.HttpMethod.POST],
+    //   integration: rustIntegration,
+    // });
+
     // // Create admin authorizer
     // const adminAuthFn = new NodejsFunction(
     //   this,
@@ -83,7 +136,7 @@ export class ApiStack extends Stack {
     //     },
     //   },
     // );
-
+    //
     // this.adminAuthorizer = new HttpLambdaAuthorizer(
     //   `${config.projectName}-${config.stage}-admin-authorizer`,
     //   adminAuthFn,
@@ -91,16 +144,17 @@ export class ApiStack extends Stack {
     //     responseTypes: [HttpLambdaResponseType.SIMPLE],
     //   },
     // );
-
-    //Create user authorizer
+    //
     // Define admin lambdas
-    const lambdas: lambda[] = [
+    const rustLambdas: rustLambda[] = [
+
       {
         name: "registration-phone",
-        entry: "lambda/register.ts",
+        manifestPath: "lambda/register/Cargo.toml",
         route: "/register/phone",
         methods: [apigw2.HttpMethod.POST],
         environment: {
+          PRIMARY_TABLE: props.primaryTable.tableName,
           TTL_TABLE: props.ttlTable.tableName,
           REGION: config.region,
         },
@@ -108,32 +162,57 @@ export class ApiStack extends Stack {
           db: "W" as const,
         },
       },
-      {
-        name: "registration-otp",
-        entry: "lambda/register.ts",
-        route: "/register/otp",
-        methods: [apigw2.HttpMethod.POST],
-        environment: {
-          TTL_TABLE: props.ttlTable.tableName,
-          PRIMARY_TABLE: props.primaryTable.tableName,
-          REGION: config.region,
-        },
-        permissions: {
-          db: "RW" as const,
-        },
-      },
-    ];
-
-    // Create all admin lambdas
-    lambdas.forEach((lambdaDef) => {
-      new ApiLambdaConstructor(this, `${lambdaDef.name}-function`, {
+    ]
+    rustLambdas.forEach((lambdaDef)=>{
+      new RustLambdaConstructor(this, `${lambdaDef.name}-function`, {
         ...lambdaDef,
         projectName: config.projectName,
         httpApi: this.httpApi,
         tables: [primaryTable, ttlTable],
         stage: config.stage,
       });
-    });
+
+    })
+    // const lambdas: lambda[] = [
+    //   {
+    //     name: "registration-phone",
+    //     entry: "lambda/register.ts",
+    //     route: "/register/phone",
+    //     methods: [apigw2.HttpMethod.POST],
+    //     environment: {
+    //       TTL_TABLE: props.ttlTable.tableName,
+    //       REGION: config.region,
+    //     },
+    //     permissions: {
+    //       db: "W" as const,
+    //     },
+    //   },
+    //   {
+    //     name: "registration-otp",
+    //     entry: "lambda/register.ts",
+    //     route: "/register/otp",
+    //     methods: [apigw2.HttpMethod.POST],
+    //     environment: {
+    //       TTL_TABLE: props.ttlTable.tableName,
+    //       PRIMARY_TABLE: props.primaryTable.tableName,
+    //       REGION: config.region,
+    //     },
+    //     permissions: {
+    //       db: "RW" as const,
+    //     },
+    //   },
+    // ];
+    //
+    // // Create all admin lambdas
+    // lambdas.forEach((lambdaDef) => {
+    //   new ApiLambdaConstructor(this, `${lambdaDef.name}-function`, {
+    //     ...lambdaDef,
+    //     projectName: config.projectName,
+    //     httpApi: this.httpApi,
+    //     tables: [primaryTable, ttlTable],
+    //     stage: config.stage,
+    //   });
+    // });
 
     // Outputs
     new CfnOutput(this, "ApiUrl", { value: this.httpApi.url! });
