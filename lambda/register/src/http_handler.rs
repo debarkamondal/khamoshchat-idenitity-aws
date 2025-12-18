@@ -1,4 +1,3 @@
-use aws_config::BehaviorVersion;
 use aws_sdk_dynamodb::{types::AttributeValue, Client};
 use base64::{engine::general_purpose, Engine as _};
 use lambda_http::{Body, Error, Request, Response};
@@ -7,7 +6,6 @@ use libsignal_dezire::vxeddsa::vxeddsa_verify;
 use rand::{rngs::OsRng, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::env;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Deserialize)]
@@ -25,7 +23,9 @@ struct RegisterOtpRequest {
     #[serde(rename = "iKey")]
     i_key: String,
     sign: String,
+    vrf: String,
     otp: String,
+    #[serde(default)]
     otks: Vec<String>,
 }
 
@@ -77,11 +77,7 @@ async fn create_user_ttl(
 
 async fn verify_user(
     client: &Client,
-    phone: &str,
-    otp: &str,
-    pre_key: &str,
-    sign: &str,
-    otks: Vec<String>,
+    req: &RegisterOtpRequest,
     ttl_table: &str,
     primary_table: &str,
 ) -> Result<Response<Body>, Error> {
@@ -91,7 +87,7 @@ async fn verify_user(
         "pk".to_string(),
         AttributeValue::S("registration".to_string()),
     );
-    key.insert("sk".to_string(), AttributeValue::S(phone.to_string()));
+    key.insert("sk".to_string(), AttributeValue::S(req.phone.to_string()));
 
     let user = client
         .get_item()
@@ -115,7 +111,7 @@ async fn verify_user(
         .and_then(|v| v.as_n().ok())
         .ok_or("Missing OTP")?;
 
-    if stored_otp != otp {
+    if stored_otp != &req.otp {
         return Ok(Response::builder()
             .status(403)
             .body(Body::Text("OTP mismatch".to_string()))?);
@@ -128,9 +124,11 @@ async fn verify_user(
         .ok_or("Missing identity key")?;
 
     // Verify signature
-    let pre_key_bytes = general_purpose::STANDARD
-        .decode(pre_key)
-        .map_err(|_| "Invalid preKey base64")?;
+    let pre_key_bytes: [u8;32] = general_purpose::STANDARD
+        .decode(&req.pre_key)
+        .map_err(|_| "Invalid preKey base64")?
+        .try_into()
+        .map_err(|_| "Couln't deserialise prekey")?;
 
     let identity_key_bytes: [u8; 32] = general_purpose::STANDARD
         .decode(identity_key.to_owned())
@@ -139,7 +137,7 @@ async fn verify_user(
         .map_err(|_| "Invalid identity key length")?;
 
     let sign_bytes: [u8; 96] = general_purpose::STANDARD
-        .decode(sign)
+        .decode(&req.sign)
         .map_err(|_| "Invalid signature base64")?
         .try_into()
         .map_err(|_| "Invalid signature length")?;
@@ -159,7 +157,7 @@ async fn verify_user(
 
     if vxeddsa_verify(
         &identity_key_bytes,
-        &message_byte,
+        &pre_key_bytes,
         &sign_bytes,
         &mut v_out as *mut [u8; 32],
     ) {
@@ -176,7 +174,7 @@ async fn verify_user(
 
     let mut permanent_item = HashMap::new();
     permanent_item.insert("pk".to_string(), AttributeValue::S("user".to_string()));
-    permanent_item.insert("sk".to_string(), AttributeValue::S(phone.to_string()));
+    permanent_item.insert("sk".to_string(), AttributeValue::S(req.phone.to_string()));
     permanent_item.insert(
         "lsi".to_string(),
         AttributeValue::S(identity_key.to_string()),
@@ -184,11 +182,11 @@ async fn verify_user(
     permanent_item.insert("createdAt".to_string(), AttributeValue::N(now.to_string()));
     permanent_item.insert(
         "sigPreKey".to_string(),
-        AttributeValue::S(pre_key.to_string()),
+        AttributeValue::S(req.pre_key.to_string()),
     );
 
     let otks_attr: Vec<AttributeValue> =
-        otks.into_iter().map(|otk| AttributeValue::S(otk)).collect();
+        req.otks.iter().map(|otk| AttributeValue::S(otk.clone())).collect();
     permanent_item.insert("otks".to_string(), AttributeValue::L(otks_attr));
 
     client
@@ -238,15 +236,23 @@ pub(crate) async fn function_handler(
         }
         ("POST", "/register/otp") => {
             let body = event.body();
-            let req: RegisterOtpRequest = serde_json::from_slice(body.as_ref())?;
+            let req: RegisterOtpRequest = match serde_json::from_slice(body.as_ref()) {
+                Ok(req) => req,
+                Err(e) => {
+                    return Ok(Response::builder()
+                        .status(400)
+                        .body(Body::Text(format!("Invalid JSON: {}", e)))?);
+                }
+            };
 
             verify_user(
                 &client,
-                &req.phone,
-                &req.otp,
-                &req.pre_key,
-                &req.sign,
-                req.otks,
+                &req, 
+                // &req.phone,
+                // &req.otp,
+                // &req.pre_key,
+                // &req.sign,
+                // req.otks,
                 &ttl_table,
                 &primary_table,
             )

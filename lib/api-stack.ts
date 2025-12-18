@@ -19,10 +19,10 @@ type rustLambda = {
   route: string;
   methods: apigw2.HttpMethod[];
   environment?:
-    | {
-        [key: string]: string;
-      }
-    | undefined;
+  | {
+    [key: string]: string;
+  }
+  | undefined;
   permissions?: {
     db?: "RW" | "R" | "W";
     // s3?: "RW" | "R" | "W";
@@ -35,10 +35,10 @@ type lambda = {
   route: string;
   methods: apigw2.HttpMethod[];
   environment?:
-    | {
-        [key: string]: string;
-      }
-    | undefined;
+  | {
+    [key: string]: string;
+  }
+  | undefined;
   permissions?: {
     db?: "RW" | "R" | "W";
     // s3?: "RW" | "R" | "W";
@@ -149,6 +149,20 @@ export class ApiStack extends Stack {
     const rustLambdas: rustLambda[] = [
 
       {
+        name: "registration-otp",
+        manifestPath: "lambda/register/Cargo.toml",
+        route: "/register/otp",
+        methods: [apigw2.HttpMethod.POST],
+        environment: {
+          PRIMARY_TABLE: props.primaryTable.tableName,
+          TTL_TABLE: props.ttlTable.tableName,
+          REGION: config.region,
+        },
+        permissions: {
+          db: "RW" as const,
+        },
+      },
+      {
         name: "registration-phone",
         manifestPath: "lambda/register/Cargo.toml",
         route: "/register/phone",
@@ -163,7 +177,7 @@ export class ApiStack extends Stack {
         },
       },
     ]
-    rustLambdas.forEach((lambdaDef)=>{
+    rustLambdas.forEach((lambdaDef) => {
       new RustLambdaConstructor(this, `${lambdaDef.name}-function`, {
         ...lambdaDef,
         projectName: config.projectName,
