@@ -8,7 +8,7 @@ aws-config = "1.8.12"
 aws-sdk-dynamodb = "1.101.0"
 base64 = "0.22.1"
 lambda_http = "1.0.0"
-libsignal-dezire = "0.1.12"
+libsignal-dezire = "0.1.142"
 rand = "0.8"
 
 serde = "1.0.228"

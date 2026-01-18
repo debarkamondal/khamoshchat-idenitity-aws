@@ -24,7 +24,7 @@ struct RegisterOtpRequest {
     i_key: String,
     sign: String,
     vrf: String,
-    otp: String,
+    otp: u32,
     #[serde(default)]
     otks: Vec<String>,
 }
@@ -111,7 +111,7 @@ async fn verify_user(
         .and_then(|v| v.as_n().ok())
         .ok_or("Missing OTP")?;
 
-    if stored_otp != &req.otp {
+    if stored_otp != &req.otp.to_string() {
         return Ok(Response::builder()
             .status(403)
             .body(Body::Text("OTP mismatch".to_string()))?);
@@ -124,7 +124,7 @@ async fn verify_user(
         .ok_or("Missing identity key")?;
 
     // Verify signature
-    let pre_key_bytes: [u8;32] = general_purpose::STANDARD
+    let pre_key_bytes: [u8; 32] = general_purpose::STANDARD
         .decode(&req.pre_key)
         .map_err(|_| "Invalid preKey base64")?
         .try_into()
@@ -149,18 +149,13 @@ async fn verify_user(
             .status(401)
             .body(Body::Text("Invalid identity key length".to_string()))?);
     }
-
-    let message = "test";
-    let mut v_out = [0u8; 32];
-    let mut message_byte = [0u8; 32];
-    message_byte[..message.len()].copy_from_slice(message.as_bytes());
+    println!("{}:{}", identity_key_bytes.len(), PUBLIC_KEY_LENGTH);
 
     if vxeddsa_verify(
         &identity_key_bytes,
         &pre_key_bytes,
         &sign_bytes,
-        &mut v_out as *mut [u8; 32],
-    ) {
+    ).is_none() {
         return Ok(Response::builder()
             .status(401)
             .body(Body::Text("Bad request".to_string()))?);
@@ -185,8 +180,11 @@ async fn verify_user(
         AttributeValue::S(req.pre_key.to_string()),
     );
 
-    let otks_attr: Vec<AttributeValue> =
-        req.otks.iter().map(|otk| AttributeValue::S(otk.clone())).collect();
+    let otks_attr: Vec<AttributeValue> = req
+        .otks
+        .iter()
+        .map(|otk| AttributeValue::S(otk.clone()))
+        .collect();
     permanent_item.insert("otks".to_string(), AttributeValue::L(otks_attr));
 
     client
@@ -205,7 +203,6 @@ pub(crate) async fn function_handler(
     primary_table: &str,
     event: Request,
 ) -> Result<Response<Body>, Error> {
-
     let path = event.uri().path();
     let method = event.method().as_str();
 
@@ -226,12 +223,14 @@ pub(crate) async fn function_handler(
                     if success {
                         Ok(Response::builder().status(204).body(Body::Empty)?)
                     } else {
-                        Ok(Response::builder().status(500).body(Body::Text("Failed to create user entry".to_string()))?)
+                        Ok(Response::builder()
+                            .status(500)
+                            .body(Body::Text("Failed to create user entry".to_string()))?)
                     }
                 }
-                Err(e) => {
-                    Ok(Response::builder().status(500).body(Body::Text(format!("Internal Error: {}", e)))?)
-                }
+                Err(e) => Ok(Response::builder()
+                    .status(500)
+                    .body(Body::Text(format!("Internal Error: {}", e)))?),
             }
         }
         ("POST", "/register/otp") => {
@@ -239,6 +238,7 @@ pub(crate) async fn function_handler(
             let req: RegisterOtpRequest = match serde_json::from_slice(body.as_ref()) {
                 Ok(req) => req,
                 Err(e) => {
+                    println!("{}", e);
                     return Ok(Response::builder()
                         .status(400)
                         .body(Body::Text(format!("Invalid JSON: {}", e)))?);
@@ -247,7 +247,7 @@ pub(crate) async fn function_handler(
 
             verify_user(
                 &client,
-                &req, 
+                &req,
                 // &req.phone,
                 // &req.otp,
                 // &req.pre_key,
