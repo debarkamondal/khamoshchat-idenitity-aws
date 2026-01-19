@@ -2,6 +2,7 @@ use aws_sdk_dynamodb::{types::AttributeValue, Client};
 use base64::{engine::general_purpose, Engine as _};
 use lambda_http::{Body, Error, Request, Response};
 use libsignal_dezire::vxeddsa::vxeddsa_verify;
+use libsignal_dezire::utils::encode_public_key;
 // use rand_core::{OsRng, RngCore};
 use rand::{rngs::OsRng, Rng};
 use serde::{Deserialize, Serialize};
@@ -153,7 +154,7 @@ async fn verify_user(
 
     if vxeddsa_verify(
         &identity_key_bytes,
-        &pre_key_bytes,
+        &encode_public_key(&pre_key_bytes),
         &sign_bytes,
     ).is_none() {
         return Ok(Response::builder()
