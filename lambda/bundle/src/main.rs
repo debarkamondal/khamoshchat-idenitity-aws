@@ -8,10 +8,9 @@ async fn main() -> Result<(), Error> {
 
     let config = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
     let client = aws_sdk_dynamodb::Client::new(&config);
-    let ttl_table = std::env::var("TTL_TABLE").map_err(|_| Error::from("TTL_TABLE not set"))?;
     let primary_table = std::env::var("PRIMARY_TABLE").map_err(|_| Error::from("PRIMARY_TABLE not set"))?;
 
     run(service_fn(|event| {
-        function_handler(&client, &ttl_table, &primary_table, event)
+        function_handler(&client, &primary_table, event)
     })).await
 }

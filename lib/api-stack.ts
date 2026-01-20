@@ -176,6 +176,20 @@ export class ApiStack extends Stack {
           db: "W" as const,
         },
       },
+      {
+        name: "bundle",
+        manifestPath: "lambda/bundle/Cargo.toml",
+        route: "/bundle/{phone}",
+        methods: [apigw2.HttpMethod.POST],
+        environment: {
+          PRIMARY_TABLE: props.primaryTable.tableName,
+          TTL_TABLE: props.ttlTable.tableName,
+          REGION: config.region,
+        },
+        permissions: {
+          db: "R" as const,
+        },
+      },
     ]
     rustLambdas.forEach((lambdaDef) => {
       new RustLambdaConstructor(this, `${lambdaDef.name}-function`, {
