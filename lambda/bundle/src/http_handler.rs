@@ -14,13 +14,21 @@ struct BundleRequest {
 }
 
 #[derive(Serialize)]
+struct Opk {
+    id: usize,
+    key: String,
+}
+
+#[derive(Serialize)]
 struct PreKeyBundle {
     #[serde(rename = "identityKey")]
     identity_key: String,
-    #[serde(rename = "preKey")]
-    pre_key: String,
-    #[serde(rename = "otks")]
-    ots: Option<String>,
+    #[serde(rename = "signedPreKey")]
+    signed_prekey: String,
+    #[serde(rename = "signature")]
+    signature: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    opk: Option<Opk>,
 }
 
 pub(crate) async fn function_handler(
@@ -106,15 +114,15 @@ pub(crate) async fn function_handler(
                 }
             };
 
-            let pre_key = requester_item
-                .get("sigPreKey")
+            let signed_prekey = requester_item
+                .get("signedPreKey")
                 .and_then(|v| v.as_s().ok())
                 .ok_or("Missing signed pre key")?;
 
             // Signature Verification
 
-            let pre_key_bytes: [u8; 32] = general_purpose::STANDARD
-                .decode(pre_key)
+            let signed_prekey_bytes: [u8; 32] = general_purpose::STANDARD
+                .decode(signed_prekey)
                 .map_err(|_| "Invalid signed pre key base64")?
                 .try_into()
                 .map_err(|_| "Invalid signed pre key length")?;
@@ -131,7 +139,11 @@ pub(crate) async fn function_handler(
                 .try_into()
                 .map_err(|_| "Invalid vrf length")?;
 
-            match vxeddsa_verify(&pre_key_bytes, requested_phone.as_bytes(), &signature_bytes) {
+            match vxeddsa_verify(
+                &signed_prekey_bytes,
+                requested_phone.as_bytes(),
+                &signature_bytes,
+            ) {
                 Some(output) => {
                     if output != vrf_bytes {
                         return Ok(Response::builder()
@@ -154,24 +166,55 @@ pub(crate) async fn function_handler(
                     .cloned()
                     .unwrap_or_default();
 
-                let pre_key = item
-                    .get("sigPreKey")
+                let signed_prekey = item
+                    .get("signedPreKey")
                     .and_then(|v| v.as_s().ok())
                     .cloned()
                     .unwrap_or_default();
 
-                // Just grabbing the first OTK for now if available
-                let otks = item
-                    .get("otks")
-                    .and_then(|v| v.as_l().ok())
-                    .and_then(|l| l.first())
+                let signature = item
+                    .get("signature")
                     .and_then(|v| v.as_s().ok())
-                    .cloned();
+                    .cloned()
+                    .unwrap_or_default();
+
+                // Get last OPK with its index
+                let opk_list = item.get("opks").and_then(|v| v.as_l().ok());
+                let opk = match opk_list {
+                    Some(list) if !list.is_empty() => {
+                        let last_index = list.len() - 1;
+                        let last_opk = list.last().and_then(|v| v.as_s().ok()).cloned();
+                        last_opk.map(|key| Opk {
+                            id: last_index,
+                            key,
+                        })
+                    }
+                    _ => None,
+                };
+
+                // Delete the last OPK from DB if it exists
+                if let Some(ref opk_obj) = opk {
+                    let mut key = HashMap::new();
+                    key.insert("pk".to_string(), AttributeValue::S("user".to_string()));
+                    key.insert(
+                        "sk".to_string(),
+                        AttributeValue::S(requested_phone.to_string()),
+                    );
+
+                    // let _ = client
+                    //     .update_item()
+                    //     .table_name(primary_table)
+                    //     .set_key(Some(key))
+                    //     .update_expression(format!("REMOVE opks[{}]", opk_obj.id))
+                    //     .send()
+                    //     .await;
+                }
 
                 let bundle = PreKeyBundle {
                     identity_key,
-                    pre_key,
-                    ots: otks,
+                    signed_prekey,
+                    signature,
+                    opk,
                 };
 
                 let body = serde_json::to_string(&bundle)?;

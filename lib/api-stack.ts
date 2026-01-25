@@ -187,7 +187,7 @@ export class ApiStack extends Stack {
           REGION: config.region,
         },
         permissions: {
-          db: "R" as const,
+          db: "RW" as const,
         },
       },
     ]

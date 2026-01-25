@@ -1,8 +1,8 @@
 use aws_sdk_dynamodb::{types::AttributeValue, Client};
 use base64::{engine::general_purpose, Engine as _};
 use lambda_http::{Body, Error, Request, Response};
-use libsignal_dezire::vxeddsa::vxeddsa_verify;
 use libsignal_dezire::utils::encode_public_key;
+use libsignal_dezire::vxeddsa::vxeddsa_verify;
 // use rand_core::{OsRng, RngCore};
 use rand::{rngs::OsRng, Rng};
 use serde::{Deserialize, Serialize};
@@ -19,15 +19,13 @@ struct RegisterPhoneRequest {
 #[derive(Deserialize)]
 struct RegisterOtpRequest {
     phone: String,
-    #[serde(rename = "preKey")]
-    pre_key: String,
-    #[serde(rename = "iKey")]
-    i_key: String,
+    #[serde(rename = "signedPreKey")]
+    signed_prekey: String,
     sign: String,
     vrf: String,
     otp: u32,
     #[serde(default)]
-    otks: Vec<String>,
+    opks: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -125,11 +123,11 @@ async fn verify_user(
         .ok_or("Missing identity key")?;
 
     // Verify signature
-    let pre_key_bytes: [u8; 32] = general_purpose::STANDARD
-        .decode(&req.pre_key)
-        .map_err(|_| "Invalid preKey base64")?
+    let signed_prekey_bytes: [u8; 32] = general_purpose::STANDARD
+        .decode(&req.signed_prekey)
+        .map_err(|_| "Invalid signedPreKey base64")?
         .try_into()
-        .map_err(|_| "Couln't deserialise prekey")?;
+        .map_err(|_| "Couln't deserialise signedPreKey")?;
 
     let identity_key_bytes: [u8; 32] = general_purpose::STANDARD
         .decode(identity_key.to_owned())
@@ -150,16 +148,32 @@ async fn verify_user(
             .status(401)
             .body(Body::Text("Invalid identity key length".to_string()))?);
     }
-    println!("{}:{}", identity_key_bytes.len(), PUBLIC_KEY_LENGTH);
 
-    if vxeddsa_verify(
+    // Decode VRF from request
+    let vrf_bytes: [u8; 32] = general_purpose::STANDARD
+        .decode(&req.vrf)
+        .map_err(|_| "Invalid vrf base64")?
+        .try_into()
+        .map_err(|_| "Invalid vrf length")?;
+
+    // Verify signature and VRF
+    match vxeddsa_verify(
         &identity_key_bytes,
-        &encode_public_key(&pre_key_bytes),
+        &encode_public_key(&signed_prekey_bytes),
         &sign_bytes,
-    ).is_none() {
-        return Ok(Response::builder()
-            .status(401)
-            .body(Body::Text("Bad request".to_string()))?);
+    ) {
+        Some(output) => {
+            if output != vrf_bytes {
+                return Ok(Response::builder()
+                    .status(401)
+                    .body(Body::Text("VRF mismatch".to_string()))?);
+            }
+        }
+        None => {
+            return Ok(Response::builder()
+                .status(401)
+                .body(Body::Text("Invalid signature".to_string()))?);
+        }
     }
 
     // Add user to permanent table
@@ -177,16 +191,20 @@ async fn verify_user(
     );
     permanent_item.insert("createdAt".to_string(), AttributeValue::N(now.to_string()));
     permanent_item.insert(
-        "sigPreKey".to_string(),
-        AttributeValue::S(req.pre_key.to_string()),
+        "signedPreKey".to_string(),
+        AttributeValue::S(req.signed_prekey.to_string()),
+    );
+    permanent_item.insert(
+        "signature".to_string(),
+        AttributeValue::S(req.sign.to_string()),
     );
 
-    let otks_attr: Vec<AttributeValue> = req
-        .otks
+    let opks_attr: Vec<AttributeValue> = req
+        .opks
         .iter()
-        .map(|otk| AttributeValue::S(otk.clone()))
+        .map(|opk| AttributeValue::S(opk.clone()))
         .collect();
-    permanent_item.insert("otks".to_string(), AttributeValue::L(otks_attr));
+    permanent_item.insert("opks".to_string(), AttributeValue::L(opks_attr));
 
     client
         .put_item()
@@ -251,9 +269,9 @@ pub(crate) async fn function_handler(
                 &req,
                 // &req.phone,
                 // &req.otp,
-                // &req.pre_key,
+                // &req.signed_prekey,
                 // &req.sign,
-                // req.otks,
+                // req.opks,
                 &ttl_table,
                 &primary_table,
             )
