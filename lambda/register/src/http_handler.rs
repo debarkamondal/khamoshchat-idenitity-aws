@@ -1,7 +1,6 @@
 use aws_sdk_dynamodb::{types::AttributeValue, Client};
 use base64::{engine::general_purpose, Engine as _};
 use lambda_http::{Body, Error, Request, Response};
-use libsignal_dezire::utils::encode_public_key;
 use libsignal_dezire::vxeddsa::vxeddsa_verify;
 // use rand_core::{OsRng, RngCore};
 use rand::{rngs::OsRng, Rng};
@@ -33,7 +32,7 @@ struct ErrorResponse {
     error: String,
 }
 
-const PUBLIC_KEY_LENGTH: usize = 32;
+const PUBLIC_KEY_LENGTH: usize = 33;
 
 async fn create_user_ttl(
     client: &Client,
@@ -123,13 +122,13 @@ async fn verify_user(
         .ok_or("Missing identity key")?;
 
     // Verify signature
-    let signed_prekey_bytes: [u8; 32] = general_purpose::STANDARD
+    let signed_prekey_bytes: [u8; 33] = general_purpose::STANDARD
         .decode(&req.signed_prekey)
         .map_err(|_| "Invalid signedPreKey base64")?
         .try_into()
         .map_err(|_| "Couln't deserialise signedPreKey")?;
 
-    let identity_key_bytes: [u8; 32] = general_purpose::STANDARD
+    let identity_key_bytes: [u8; 33] = general_purpose::STANDARD
         .decode(identity_key.to_owned())
         .map_err(|_| "Invalid identity key base64")?
         .try_into()
@@ -157,11 +156,7 @@ async fn verify_user(
         .map_err(|_| "Invalid vrf length")?;
 
     // Verify signature and VRF
-    match vxeddsa_verify(
-        &identity_key_bytes,
-        &encode_public_key(&signed_prekey_bytes),
-        &sign_bytes,
-    ) {
+    match vxeddsa_verify(&identity_key_bytes, &signed_prekey_bytes, &sign_bytes) {
         Some(output) => {
             if output != vrf_bytes {
                 return Ok(Response::builder()

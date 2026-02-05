@@ -1,6 +1,4 @@
-#!/usr/bin/env node
 import * as cdk from 'aws-cdk-lib';
-import { KhamoshchatIdentityAwsStack } from '../lib/khamoshchat-identity-aws-stack';
 import { SharedConfig } from "../lib/config";
 import * as dotenv from "dotenv";
 import * as path from "path";
