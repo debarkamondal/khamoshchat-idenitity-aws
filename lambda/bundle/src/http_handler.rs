@@ -121,7 +121,7 @@ pub(crate) async fn function_handler(
 
             // Signature Verification
 
-            let signed_prekey_bytes: [u8; 32] = general_purpose::STANDARD
+            let signed_prekey_bytes: [u8; 33] = general_purpose::STANDARD
                 .decode(signed_prekey)
                 .map_err(|_| "Invalid signed pre key base64")?
                 .try_into()
